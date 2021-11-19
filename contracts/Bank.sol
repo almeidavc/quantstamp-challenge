@@ -3,6 +3,10 @@ pragma solidity 0.7.0;
 import "./interfaces/IBank.sol";
 
 contract Bank is IBank {
+    bool internal locked
+    mapping(address => Account) public userAccount;
+
+     
     /**
      * The purpose of this function is to allow end-users to deposit a given 
      * token amount into their bank account.
@@ -14,6 +18,14 @@ contract Bank is IBank {
      */
     function deposit(address token, uint256 amount) payable external override returns (bool) {
         // TODO
+        if(!(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c || token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) || 
+        !(msg.value >= amount) || !(msg.value >= amount)) {
+            revert();
+        }
+        userAccount[msg.sender].deposit += amount;
+        // still have to do the conversions between eth and hak
+        emit Deposit(msg.sender, token, amount);
+        return true;
     }
 
     /**
