@@ -6,7 +6,16 @@ contract Bank is IBank {
     bool internal locked
     mapping(address => Account) public userAccount;
 
-     
+    modifier ETHorHAK {
+      require(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c || token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+      _;
+    }
+    
+    modifier sufficientFunds {
+      require(msg.value >= amount);
+      _;
+    }
+
     /**
      * The purpose of this function is to allow end-users to deposit a given 
      * token amount into their bank account.
@@ -111,7 +120,7 @@ contract Bank is IBank {
      * @param token - the address of the token for which the balance is computed.
      * @return - the value of the caller's balance with interest, excluding debts.
      */
-    function getBalance(address token) view external override returns (uint256) {
+    function getBalance(address token) view external override ETHorHAK returns (uint256) {
         // TODO
     }
 }
