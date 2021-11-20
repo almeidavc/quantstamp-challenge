@@ -27,15 +27,14 @@ contract Bank is IBank {
       _;
     }
     
-    constructor() {
-        HAKaddress = 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c;
-        priceOracle = 0xc3F639B8a6831ff50aD8113B438E2Ef873845552;
-    }
+    // constructor() {
+    //     HAKaddress = 0xBefeeD4CB8c6DD190793b1c97B72B60272f3EA6C;
+    //     priceOracle = 0xc3F639B8a6831ff50aD8113B438E2Ef873845552;
+    // }
 
     constructor(address _priceOracle, address _HAKaddress) {
         po = IPriceOracle(_priceOracle);
         HAKaddress = _HAKaddress;
-        //HAK: 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c
     }
     
     /* function updateInterest() internal {
@@ -212,33 +211,33 @@ contract Bank is IBank {
     
      
     function liquidate(address token, address account) payable external override returns (bool) {
-        // TODO
-
+//         // TODO
+// 
         // Only support HAK as collateral token
-        require(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c, "token not supported");
+        require(token == HAKaddress, "token not supported");
         // Prevent a user from liquidating own account
         require(account != msg.sender, "cannot liquidate own position");
         // Collateral ratio must be lower than 150%
-        require((getCollateralRatio(token, account) < 15000 && getCollateralRatio(token, account) > 0), "healty position");
+        require((_getCollateralRatio(token, account) < 15000 && _getCollateralRatio(token, account) > 0), "healty position");
         // Liquidator must have sufficient ETH
-        require(msg.value >= debts[account], "insufficient ETH sent by liquidator");
+        require(msg.value >= accountDebt[account].deposit, "insufficient ETH sent by liquidator");
 
 
         // if everything is fine
         uint256 sendBackAmount = 0;
-        if (msg.value > debts[account]) {
-             sendBackAmount = DSMath.sub(msg.value, debts[account]);
+        if (msg.value > accountDebt[account].deposit) {
+             sendBackAmount = DSMath.sub(msg.value, accountDebt[account].deposit);
         } 
-        uint256 collateralAmount = userAccount[account].deposit;
+        uint256 collateralAmount = accountHAK[account].deposit;
         msg.sender.transfer(collateralAmount);
-        debts[account] = 0;
-        userAccount[account].deposit = 0;
+        accountDebt[account].deposit = 0;
+        accountHAK[account].deposit = 0;
         emit Liquidate(msg.sender, account, token, collateralAmount, sendBackAmount);
         return true;
         
     }
-    
-    function getCollateralRatio(address token, address account) view external override returns (uint256) {
+
+    function _getCollateralRatio(address token, address account) view internal returns (uint256) {
         /*8
         if (debts[account] == 0) {
             return type(uint256).max;
@@ -248,6 +247,10 @@ contract Bank is IBank {
             .wdiv(debts[account])
             .mul(10000);
         */
+    }
+    
+    function getCollateralRatio(address token, address account) view external override returns (uint256) {
+        return _getCollateralRatio(token, account);
     }
     
     function getInterest(address token, address account) view internal returns (uint256) {
