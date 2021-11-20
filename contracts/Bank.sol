@@ -34,7 +34,6 @@ contract Bank is IBank {
         po = IPriceOracle(_priceOracle);
         HAKaddress = _HAKaddress;
         _HAK = HAKTest(_HAKaddress);
-        //HAK: 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c
     }
 
     // constructor() {
@@ -42,49 +41,27 @@ contract Bank is IBank {
     //     priceOracle = 0xc3F639B8a6831ff50aD8113B438E2Ef873845552;
     // }
 
-    // constructor(address _priceOracle, address _HAKaddress) {
-    //     po = IPriceOracle(_priceOracle);
-    //     HAKaddress = _HAKaddress;
-    // }
-    
-    /* function updateInterest() internal {
-        userAccounts[msg.sender].interest = block.number
-            .sub(userAccounts[msg.sender].lastInterestBlock)
-            .mul(0.0003)
-            .mul(userAccounts[msg.sender].deposit)
-            .add(userAccounts[msg.sender].interest);
-        
-        userAccounts[msg.sender].lastInterestBlock = block.number;
-     } */
-    
-   
-    function updateInterest(address account) internal {
-        uint256 toAdd = block.number
-            .sub(accountETH[msg.sender].lastInterestBlock)
+    function getInterest(Account memory acc) internal view returns (uint256) {
+        return block.number
+            .sub(acc.lastInterestBlock)
             .mul(3)
             .wdiv(10000)
-            .mul(accountETH[msg.sender].deposit) / 10 ** 18;
+            .mul(acc.deposit) / 10 ** 18;
+    }
 
-        accountETH[msg.sender].interest.add(toAdd);
-        accountETH[msg.sender].lastInterestBlock = block.number;
+    function updateInterest() internal {
+        address account = msg.sender;
+        uint256 res = getInterest(accountHAK[account]);
+        accountHAK[account].interest = accountHAK[account].interest.add(res);
+        accountHAK[account].lastInterestBlock = block.number;
 
-        toAdd = block.number
-            .sub(accountHAK[msg.sender].lastInterestBlock)
-            .mul(3)
-            .wdiv(10000)
-            .mul(accountHAK[msg.sender].deposit) / 10 ** 18;
+        res = getInterest(accountETH[account]);
+        accountETH[account].interest = accountHAK[account].interest.add(res);
+        accountETH[account].lastInterestBlock = block.number;
 
-        accountHAK[msg.sender].interest.add(toAdd);
-        accountHAK[msg.sender].lastInterestBlock = block.number;
-
-        toAdd = block.number
-            .sub(accountDebt[msg.sender].lastInterestBlock)
-            .mul(3)
-            .wdiv(10000)
-            .mul(accountDebt[msg.sender].deposit) / 10 ** 18;
-
-        accountDebt[msg.sender].interest.add(toAdd);
-        accountDebt[msg.sender].lastInterestBlock = block.number;
+        res = getInterest(accountDebt[account]);
+        accountDebt[account].interest = accountDebt[account].interest.add(res);
+        accountETH[account].lastInterestBlock = block.number;
     }
     
     /*
@@ -102,7 +79,7 @@ contract Bank is IBank {
     }
     
     function deposit(address token, uint256 amount) payable external override ETHorHAK(token) returns (bool) {
-        getInterest(msg.sender);
+        updateInterest();
 
         if (token == ETHaddress) {
             if(msg.value < amount) {
@@ -125,7 +102,7 @@ contract Bank is IBank {
     }
 
     function withdraw(address token, uint256 amount) external override ETHorHAK(token) returns (uint256) {
-        getInterest(msg.sender);
+        updateInterest();
         
         if (_getBalance(token) == 0) {
             revert("without balance");
@@ -177,7 +154,6 @@ contract Bank is IBank {
         msg.sender.transfer(amount);
         emit Withdraw(msg.sender, token, amount);
         return amount;
-        */
     }
    
     function borrow(address token, uint256 amount) external override returns (uint256) {
@@ -207,7 +183,7 @@ contract Bank is IBank {
             revert("nothing to repay");
         }
 
-        getInterest(msg.sender);
+        updateInterest();
         uint256 toReduce = amount;
         if (toReduce>accountDebt[msg.sender].interest) {
             accountDebt[msg.sender].interest = 0;
@@ -221,13 +197,10 @@ contract Bank is IBank {
         accountDebt[msg.sender].deposit = accountDebt[msg.sender].deposit - toReduce;
         emit Repay(msg.sender, token, accountDebt[msg.sender].deposit);
         return accountDebt[msg.sender].deposit;
-        */
     }
     
      
     function liquidate(address token, address account) payable external override returns (bool) {
-//         // TODO
-// 
         // Only support HAK as collateral token
         require(token == HAKaddress, "token not supported");
         // Prevent a user from liquidating own account
@@ -268,38 +241,13 @@ contract Bank is IBank {
         return _getCollateralRatio(token, account);
     }
     
-    function getInterest(address token, address account) view internal returns (uint256) {
-        uint256 res;
-        
-        if (token == HAKaddress) {
-            res = block.number
-                .sub(accountHAK[account].lastInterestBlock)
-                .mul(3)
-                .wdiv(10000)
-                .mul(accountHAK[account].deposit) / 10 ** 18;
-        }
-        
-        if (token == ETHaddress) {
-            res = block.number
-                .sub(accountETH[account].lastInterestBlock)
-                .mul(3)
-                .wdiv(10000)
-                .mul(accountETH[account].deposit) / 10 ** 18;
-        }
-            
-        return res;
-    }
-    
-    
-    function getBalance(address token) view external override ETHorHAK(token) returns (uint256) {
-        getInterest(token, msg.sender);
-        
+    function _getBalance(address token) view internal ETHorHAK(token) returns (uint256) {
         uint256 balance;
         if (token == ETHaddress) {
-            balance = accountETH[msg.sender].deposit.add(accountETH[msg.sender].interest);
+            balance = accountETH[msg.sender].deposit.add(getInterest(accountETH[msg.sender]));
         }
         if (token == HAKaddress) {
-            balance = accountHAK[msg.sender].deposit.add(accountHAK[msg.sender].interest);
+            balance = accountHAK[msg.sender].deposit.add(getInterest(accountHAK[msg.sender]));
         }
         // If a user withdraws their deposit earlier or later than 100 blocks, they will receive a proportional interest amount.
         // uint256 blockCount = block.number - account.lastInterestBlock;
