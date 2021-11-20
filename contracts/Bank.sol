@@ -29,11 +29,7 @@ contract Bank is IBank {
         // still have to do the conversions between eth and hak
         emit Deposit(msg.sender, token, amount);
         updateInterest();
-        (bool success, uint256 res) = SafeMath.tryAdd(userAccount[msg.sender].deposit, amount);
-        if(!success){
-            revert();
-        }
-        userAccount[msg.sender].deposit = res;
+        userAccount[msg.sender].deposit = Math.add(userAccount[msg.sender].deposit, amount);
         return true;
     }
 
@@ -68,14 +64,11 @@ contract Bank is IBank {
      */
     function borrow(address token, uint256 amount) external override returns (uint256) {
         if(!(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c && token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE && 
-        !((userAccount[msg.sender].deposit+amount)/debt <= 1.5))) {
+        !((userAccount[msg.sender].deposit+amount)/debts[msg.sender] <= 1.5))) {
             revert();
         }
-        (bool success, uint256 res) = SafeMath.tryAdd(debt[msg.sender], amount);
-        if(!success){
-            revert();
-        }
-        debt = res;
+        debts[msg.sender] = Math.add(debts[msg.sender], amount);
+        msg.sender.transfer(amount);
         return getCollateralRatio();
     }
      
@@ -109,12 +102,12 @@ contract Bank is IBank {
         } 
         else{
             interestOwed[msg.sender] = interest[msg.sender] - toReduce;
-            emit Repay(msg.sender, token, debt);
-            return debt[msg.sender];
+            emit Repay(msg.sender, token, debts[msg.sender]);
+            return debts[msg.sender];
         }
-        debt = debt[msg.sender] - toReduce;
-        emit Repay(msg.sender, token, debt);
-        return debt[msg.sender];
+        debts[msg.sender] = debts[msg.sender] - toReduce;
+        emit Repay(msg.sender, token, debts[msg.sender]);
+        return debts[msg.sender];
     }
      
     /**
