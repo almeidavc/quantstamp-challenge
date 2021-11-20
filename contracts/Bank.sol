@@ -3,17 +3,21 @@ pragma solidity 0.7.0;
 
 import "./interfaces/IBank.sol";
 import "./interfaces/IPriceOracle.sol";
+import "./libraries/Math.sol";
 
 contract Bank is IBank {
-    bool internal locked;
+    using Math.sol for uint256
+    
     mapping(address => Account) public userAccount;
+    mapping(address => unit256) public debts;
+    mapping(address => unit256) public interestOwed;
 
     address private priceOracle;
     address private HAKaddress;
     address constant private ETHaddress = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     modifier ETHorHAK(address token) {
-      require(token == HAKaddress || token == ETHaddress);
+      require(token == HAKaddress || token == ETHaddress, "token not supported");
       _;
     }
     
@@ -28,6 +32,16 @@ contract Bank is IBank {
         //HAK: 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c
     }
     
+    function updateInterest() {
+        userAccounts[msg.sender].interest = block.number
+            .sub(userAccounts[msg.sender].lastInterestBlock)
+            .mul(0.0003)
+            .mul(userAccounts[msg.sender].deposit)
+            .add(userAccounts[msg.sender].interest);
+        
+        userAccounts[msg.sender].lastInterestBlock = block.number;
+    }
+     
     /**
      * The purpose of this function is to allow end-users to deposit a given 
      * token amount into their bank account.
@@ -37,75 +51,81 @@ contract Bank is IBank {
      * @param amount - the amount of the given token to deposit.
      * @return - true if the deposit was successful, otherwise revert.
      */
-    function deposit(address token, uint256 amount) payable external override returns (bool) {
-        // TODO
-        if(!(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c || token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) || 
-        !(msg.value >= amount) || !(msg.value >= amount)) {
-            revert();
+    function deposit(address token, uint256 amount) payable external override ETHorHAK(token) returns (bool) {
+        if(msg.value != amount) {
+            revert("invalid deposit value");
         }
-        userAccount[msg.sender].deposit += amount;
         // still have to do the conversions between eth and hak
         emit Deposit(msg.sender, token, amount);
+        //updateInterest();
+        uint256 res = DSMath.add(userAccount[msg.sender].deposit, amount);
+        userAccount[msg.sender].deposit = res;
         return true;
     }
 
-    /**
-     * The purpose of this function is to allow end-users to withdraw a given 
-     * token amount from their bank account. Upon withdrawal, the user must
-     * automatically receive a 3% interest rate per 100 blocks on their deposit.
-     * @param token - the address of the token to withdraw. If this address is
-     *                set to 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE then 
-     *                the token to withdraw is ETH.
-     * @param amount - the amount of the given token to withdraw. If this param
-     *                 is set to 0, then the maximum amount available in the 
-     *                 caller's account should be withdrawn.
-     * @return - the amount that was withdrawn plus interest upon success, 
-     *           otherwise revert.
-     */
     function withdraw(address token, uint256 amount) external override returns (uint256) {
-        // TODO
+        updateInterest();
+        
+        if (token != 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE
+        && token != 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c
+        && userAccounts[msg.sender].deposit + userAccounts[msg.sender].interest >= amount) {
+            revert();
+        }
+        
+        if (amount == 0) {
+            uint256 tmp = userAccounts[msg.sender].deposit + userAccounts[msg.sender].interest;
+            userAccounts[msg.sender].deposit = 0;
+            userAccounts[msg.sender].interest = 0;
+            msg.sender.transfer(tmp);
+        }
+
+        if (userAccounts[msg.sender].interest < amount) {
+            userAccounts[msg.sender].interest = 0;
+            userAccounts[msg.sender].deposit -= amount - userAccounts[msg.sender].interest;
+        } else {
+            userAccounts[msg.sender].interest -= amount;
+        }
+        
+        msg.sender.transfer(amount);
+        emit Withdraw(msg.sender, token, amount);
+        return amount;
     }
-      
-    /**
-     * The purpose of this function is to allow users to borrow funds by using their 
-     * deposited funds as collateral. The minimum ratio of deposited funds over 
-     * borrowed funds must not be less than 150%.
-     * @param token - the address of the token to borrow. This address must be
-     *                set to 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE, otherwise  
-     *                the transaction must revert.
-     * @param amount - the amount to borrow. If this amount is set to zero (0),
-     *                 then the amount borrowed should be the maximum allowed, 
-     *                 while respecting the collateral ratio of 150%.
-     * @return - the current collateral ratio.
-     */
+   
     function borrow(address token, uint256 amount) external override returns (uint256) {
-        // TODO
+        if(!(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c && token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE && 
+        !((userAccount[msg.sender].deposit+amount)/debts[msg.sender] <= 1.5))) {
+            revert();
+        }
+        debts[msg.sender] = Math.add(debts[msg.sender], amount);
+        msg.sender.transfer(amount);
+        return getCollateralRatio();
     }
      
-    /**
-     * The purpose of this function is to allow users to repay their loans.
-     * Loans can be repaid partially or entirely. When replaying a loan, an
-     * interest payment is also required. The interest on a loan is equal to
-     * 5% of the amount lent per 100 blocks. If the loan is repaid earlier,
-     * or later then the interest should be proportional to the number of 
-     * blocks that the amount was borrowed for.
-     * @param token - the address of the token to repay. If this address is
-     *                set to 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE then 
-     *                the token is ETH.
-     * @param amount - the amount to repay including the interest.
-     * @return - the amount still left to pay for this loan, excluding interest.
-     */
     function repay(address token, uint256 amount) payable external override returns (uint256) {
         // TODO
+        
+        //debt still has to be implemented
+        
+        if(!(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c && token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) && 
+        !(msg.value == amount)) {
+            revert();
+        }
+        updateInterest();
+        uint256 toReduce = amount;
+        if (toReduce>interestOwed[msg.sender]) {
+            interestOwed[msg.sender] = 0;
+            toReduce = toReduce - interestOwed[msg.sender];
+        } 
+        else{
+            interestOwed[msg.sender] = interest[msg.sender] - toReduce;
+            emit Repay(msg.sender, token, debts[msg.sender]);
+            return debts[msg.sender];
+        }
+        debts[msg.sender] = debts[msg.sender] - toReduce;
+        emit Repay(msg.sender, token, debts[msg.sender]);
+        return debts[msg.sender];
     }
      
-    /**
-     * The purpose of this function is to allow so called keepers to collect bad
-     * debt, that is in case the collateral ratio goes below 150% for any loan. 
-     * @param token - the address of the token used as collateral for the loan. 
-     * @param account - the account that took out the loan that is now undercollateralized.
-     * @return - true if the liquidation was successful, otherwise revert.
-     */
     function liquidate(address token, address account) payable external override returns (bool) {
         // TODO
         
@@ -132,40 +152,30 @@ contract Bank is IBank {
         return true;
         
     }
- 
-    /**
-     * The purpose of this function is to return the collateral ratio for any account.
-     * The collateral ratio is computed as the value deposited divided by the value
-     * borrowed. However, if no value is borrowed then the function should return 
-     * uint256 MAX_INT = type(uint256).max
-     * @param token - the address of the deposited token used a collateral for the loan. 
-     * @param account - the account that took out the loan.
-     * @return - the value of the collateral ratio with 2 percentage decimals, e.g. 1% = 100.
-     *           If the account has no deposits for the given token then return zero (0).
-     *           If the account has deposited token, but has not borrowed anything then 
-     *           return MAX_INT.
-     */
+    
     function getCollateralRatio(address token, address account) view external override returns (uint256) {
-        // TODO
+        if (debts[account] == 0) {
+            return type(uint256).max;
+        }
+        
+        return userAccounts[account].deposit
+            .wdiv(debts[account])
+            .mul(10000);
     }
-
-    /**
-     * The purpose of this function is to return the balance that the caller 
-     * has in their own account for the given token (including interest).
-     * @param token - the address of the token for which the balance is computed.
-     * @return - the value of the caller's balance with interest, excluding debts.
-     */
+    
     function getBalance(address token) view external override ETHorHAK(token) returns (uint256) {
-//         Account account = userAccount[msg.sender];
-//         uint256 blockCount = block.number - account.lastInterestBlock;
-//         uint256 deposit = account.deposit;
-//         if (token == HAKaddress) {
-//             deposit = convertToHAK(deposit);
-//         }
-//         constant uint256 interestRate = 0.03;
-//         account.interest = deposit * ((blockCount % 100) * interestRate + 1);
-// 
-//         // If a user withdraws their deposit earlier or later than 100 blocks, they will receive a proportional interest amount.
-//         return deposit;
+        Account memory account = userAccount[msg.sender];
+        uint256 balance = account.deposit;
+
+        // If a user withdraws their deposit earlier or later than 100 blocks, they will receive a proportional interest amount.
+        // uint256 blockCount = block.number - account.lastInterestBlock;
+        // if (token == HAKaddress) {
+        //     deposit = convertToHAK(deposit);
+        // }
+        //uint256 interestRate = 0.03;
+        // account.interest = depositM * (blockCount % 100) * 3 / 100;
+        // depositM += account.interest;
+
+        return balance;
     }
 }
