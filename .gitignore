@@ -3,3 +3,5 @@ cache/
 contracts/artifacts/
 node_modules/
 typechain-types/
+package-lock.json
+package.json
