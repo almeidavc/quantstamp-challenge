@@ -1,11 +1,22 @@
 pragma solidity 0.7.0;
 
 import "./interfaces/IBank.sol";
+import "./SafeMath.sol";
 
 contract Bank is IBank {
-    bool internal locked
-    mapping(address => Account) public userAccount;
-
+    using MySafeMath for uint256;
+    
+    mapping(address => Account) public userAccounts;
+    
+    function updateInterest() {
+        userAccounts[msg.sender].interest = block.number
+            .sub(userAccounts[msg.sender].lastInterestBlock)
+            .mul(0.0003)
+            .mul(userAccounts[msg.sender].deposit)
+            .add(userAccounts[msg.sender].interest);
+        
+        userAccounts[msg.sender].lastInterestBlock = block.number;
+    }
      
     /**
      * The purpose of this function is to allow end-users to deposit a given 
@@ -42,7 +53,24 @@ contract Bank is IBank {
      *           otherwise revert.
      */
     function withdraw(address token, uint256 amount) external override returns (uint256) {
-        // TODO
+        updateInterest();
+        
+        if (token != 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE
+        && token != 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c
+        && userAccounts[msg.sender].deposit + userAccounts[msg.sender].interest >= amount) {
+            revert();
+        }
+        
+        (bool ok, uint256 res) = userAccounts[msg.sender].interest.trySub(amount);
+        if (!ok) {
+            userAccounts[msg.sender].interest = 0;
+            userAccounts[msg.sender].deposit -= amount - res;
+        } else {
+            userAccounts[msg.sender].interest = res;
+        }
+        
+        msg.sender.transfer(amount);
+        emit Withdraw(msg.sender, token, amount);
     }
       
     /**
@@ -102,7 +130,13 @@ contract Bank is IBank {
      *           return MAX_INT.
      */
     function getCollateralRatio(address token, address account) view external override returns (uint256) {
-        // TODO
+        if (!debts[account]) {
+            return type(uint256).max;
+        }
+        
+        return userAccounts[account].deposit
+            .div(debts[account])
+            .mul(10000);
     }
 
     /**
