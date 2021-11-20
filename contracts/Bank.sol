@@ -5,6 +5,8 @@ import "./interfaces/IBank.sol";
 import "./interfaces/IPriceOracle.sol";
 import "./libraries/Math.sol";
 
+import "./test/HAKToken.sol";
+
 contract Bank is IBank {
     using DSMath for uint256;
     
@@ -27,15 +29,23 @@ contract Bank is IBank {
       _;
     }
     
+    HAKTest private _HAK;
+    constructor(address _priceOracle, address _HAKaddress) {
+        po = IPriceOracle(_priceOracle);
+        HAKaddress = _HAKaddress;
+        _HAK = HAKTest(_HAKaddress);
+        //HAK: 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c
+    }
+
     // constructor() {
     //     HAKaddress = 0xBefeeD4CB8c6DD190793b1c97B72B60272f3EA6C;
     //     priceOracle = 0xc3F639B8a6831ff50aD8113B438E2Ef873845552;
     // }
 
-    constructor(address _priceOracle, address _HAKaddress) {
-        po = IPriceOracle(_priceOracle);
-        HAKaddress = _HAKaddress;
-    }
+    // constructor(address _priceOracle, address _HAKaddress) {
+    //     po = IPriceOracle(_priceOracle);
+    //     HAKaddress = _HAKaddress;
+    // }
     
     /* function updateInterest() internal {
         userAccounts[msg.sender].interest = block.number
@@ -90,29 +100,22 @@ contract Bank is IBank {
     function value() payable public returns (uint256) {
         return msg.value;
     }
-     
-    /**
-     * The purpose of this function is to allow end-users to deposit a given 
-     * token amount into their bank account.
-     * @param token - the address of the token to deposit. If this address is
-     *                set to 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE then 
-     *                the token to deposit is ETH.
-     * @param amount - the amount of the given token to deposit.
-     * @return - true if the deposit was successful, otherwise revert.
-     */
+    
     function deposit(address token, uint256 amount) payable external override ETHorHAK(token) returns (bool) {
-        if(msg.value < amount) {
-            revert("msg.value less than amount");
-        }
-        msg.sender.transfer(msg.value - amount);
-        updateInterest(msg.sender);
-        
+        getInterest(msg.sender);
+
         if (token == ETHaddress) {
+            if(msg.value < amount) {
+                revert("msg.value less than amount");
+            }
+            msg.sender.transfer(msg.value - amount);
             uint256 res = DSMath.add(accountETH[msg.sender].deposit, amount);
             accountETH[msg.sender].deposit = res;
         } 
-        
+
         if (token == HAKaddress) {
+            require(_HAK.allowance(msg.sender, address(this)) >= amount);
+            _HAK.transferFrom(msg.sender, address(this), amount);
             uint256 res = DSMath.add(accountHAK[msg.sender].deposit, amount);
             accountHAK[msg.sender].deposit = res;
         }
@@ -122,15 +125,22 @@ contract Bank is IBank {
     }
 
     function withdraw(address token, uint256 amount) external override ETHorHAK(token) returns (uint256) {
-        /*
-        updateInterest();
+        getInterest(msg.sender);
         
-        if (token == ETHaddress
-        && accountETH[msg.sender].deposit + accountETH[msg.sender].interest < amount
-        || token == HAKaddress
-        && accountHAK[msg.sender].deposit + accountHAK[msg.sender].interest < amount) {
-            revert();
+        if (_getBalance(token) == 0) {
+            revert("without balance");
         }
+
+        if (_getBalance(token) < amount) {
+            revert("balance too low");
+        }
+
+        // if (token == ETHaddress
+        // && accountETH[msg.sender].deposit + accountETH[msg.sender].interest < amount
+        // || token == HAKaddress
+        // && accountHAK[msg.sender].deposit + accountHAK[msg.sender].interest < amount) {
+        //     revert("no balance");
+        // }
         
         if (token == ETHaddress) {
             if (amount == 0) {
@@ -185,14 +195,19 @@ contract Bank is IBank {
     }
      
     function repay(address token, uint256 amount) payable external override returns (uint256) {
-        /*
-        // TODO
-
-        if(!(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c) && 
-        !(msg.value == amount)) {
-            revert();
+        if(token != ETHaddress) {
+            revert("token not supported");
         }
-        updateInterest();
+
+        if(msg.value != amount) {
+            revert("invalid amount");
+        }
+
+        if (accountDebt[msg.sender].deposit + accountDebt[msg.sender].interest == 0) {
+            revert("nothing to repay");
+        }
+
+        getInterest(msg.sender);
         uint256 toReduce = amount;
         if (toReduce>accountDebt[msg.sender].interest) {
             accountDebt[msg.sender].interest = 0;
@@ -296,5 +311,10 @@ contract Bank is IBank {
         // depositM += account.interest;
 
         return balance;
+    }
+
+
+    function getBalance(address token) view external override ETHorHAK(token) returns (uint256) {
+        return _getBalance(token);
     }
 }
