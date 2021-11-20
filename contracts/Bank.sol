@@ -5,7 +5,7 @@ import "./interfaces/IBank.sol";
 import "./interfaces/IPriceOracle.sol";
 
 contract Bank is IBank {
-    bool internal locked
+    bool internal locked;
     mapping(address => Account) public userAccount;
 
     address private priceOracle;
@@ -22,7 +22,7 @@ contract Bank is IBank {
       _;
     }
 
-    constructor(address _priceOracle, address _HAKaddress) public {
+    constructor(address _priceOracle, address _HAKaddress) {
         priceOracle = _priceOracle;
         HAKaddress = _HAKaddress;
         //HAK: 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c
