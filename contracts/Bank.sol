@@ -128,6 +128,7 @@ contract Bank is IBank {
         debts[account] = 0;
         userAccount[account].deposit = 0;
         emit Liquidate(msg.sender, account, token, collateralAmount, sendBackAmount);
+        return true;
         
     }
  
