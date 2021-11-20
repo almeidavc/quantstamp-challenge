@@ -213,6 +213,29 @@ contract Bank is IBank {
      
     function liquidate(address token, address account) payable external override returns (bool) {
         // TODO
+
+        // Only support HAK as collateral token
+        require(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c, "token not supported");
+        // Prevent a user from liquidating own account
+        require(account != msg.sender, "cannot liquidate own position");
+        // Collateral ratio must be lower than 150%
+        require((getCollateralRatio(token, account) < 15000 && getCollateralRatio(token, account) > 0), "healty position");
+        // Liquidator must have sufficient ETH
+        require(msg.value >= debts[account], "insufficient ETH sent by liquidator");
+
+
+        // if everything is fine
+        uint256 sendBackAmount = 0;
+        if (msg.value > debts[account]) {
+             sendBackAmount = DSMath.sub(msg.value, debts[account]);
+        } 
+        uint256 collateralAmount = userAccount[account].deposit;
+        msg.sender.transfer(collateralAmount);
+        debts[account] = 0;
+        userAccount[account].deposit = 0;
+        emit Liquidate(msg.sender, account, token, collateralAmount, sendBackAmount);
+        return true;
+        
     }
     
     function getCollateralRatio(address token, address account) view external override returns (uint256) {
