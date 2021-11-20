@@ -5,3 +5,5 @@ node_modules/
 typechain-types/
 bin/
 .vscode/
+package-lock.json
+package.json
