@@ -64,11 +64,13 @@ contract Bank is IBank {
         accountETH[account].lastInterestBlock = block.number;
     }
     
-    /*
+    
     function convertHAKToETH(uint256 amount) public returns (uint256) {
-        return po.getVirtualPrice(HAKaddress);
+        return 100000;
+        // return po.getVirtualPrice(HAKaddress);
     }
     
+    /*
     function convertETHToHAK(uint256 amount) public returns (uint256) {
         return amount / po.getVirtualPrice(HAKaddress);
     }
@@ -103,28 +105,32 @@ contract Bank is IBank {
 
     function withdraw(address token, uint256 amount) external override ETHorHAK(token) returns (uint256) {
         updateInterest();
+        uint256 toWithdraw;
         
-        if (_getBalance(token) == 0) {
-            revert("without balance");
+        if (
+            (token == ETHaddress
+            && accountETH[msg.sender].deposit + accountETH[msg.sender].interest == 0)
+            || (token == HAKaddress
+            && accountHAK[msg.sender].deposit + accountHAK[msg.sender].interest == 0)
+        ) {
+            revert("no balance");
         }
-
-        if (_getBalance(token) < amount) {
-            revert("balance too low");
+        
+        if (
+            (token == ETHaddress
+            && accountETH[msg.sender].deposit + accountETH[msg.sender].interest < amount)
+            || (token == HAKaddress
+            && accountHAK[msg.sender].deposit + accountHAK[msg.sender].interest < amount)
+        ) {
+            revert("amount exceeds balance");
         }
-
-        // if (token == ETHaddress
-        // && accountETH[msg.sender].deposit + accountETH[msg.sender].interest < amount
-        // || token == HAKaddress
-        // && accountHAK[msg.sender].deposit + accountHAK[msg.sender].interest < amount) {
-        //     revert("no balance");
-        // }
+        
         
         if (token == ETHaddress) {
             if (amount == 0) {
-                uint256 tmp = accountETH[msg.sender].deposit + accountETH[msg.sender].interest;
+                toWithdraw = accountETH[msg.sender].deposit + accountETH[msg.sender].interest;
                 accountETH[msg.sender].deposit = 0;
                 accountETH[msg.sender].interest = 0;
-                msg.sender.transfer(tmp);
             } else {
                 if (accountETH[msg.sender].interest < amount) {
                     accountETH[msg.sender].interest = 0;
@@ -133,14 +139,14 @@ contract Bank is IBank {
                     accountETH[msg.sender].interest -= amount;
                 }
             }
+            msg.sender.transfer(toWithdraw);
         }
         
         if (token == HAKaddress) {
             if (amount == 0) {
-                uint256 tmp = accountHAK[msg.sender].deposit + accountHAK[msg.sender].interest;
+                toWithdraw = accountHAK[msg.sender].deposit + accountHAK[msg.sender].interest;
                 accountHAK[msg.sender].deposit = 0;
                 accountHAK[msg.sender].interest = 0;
-                msg.sender.transfer(tmp);
             } else {
                 if (accountHAK[msg.sender].interest < amount) {
                     accountHAK[msg.sender].interest = 0;
@@ -149,25 +155,33 @@ contract Bank is IBank {
                     accountHAK[msg.sender].interest -= amount;
                 }
             }
+            _HAK.transfer(msg.sender, toWithdraw);
         }
         
-        msg.sender.transfer(amount);
-        emit Withdraw(msg.sender, token, amount);
+        emit Withdraw(msg.sender, token, toWithdraw);
         return amount;
     }
    
     function borrow(address token, uint256 amount) external override returns (uint256) {
-        /*
-        if(token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE && 
-        !((accountETH[msg.sender].deposit.add(accountHAK[msg.sender].deposit.add(amount).convertHAKToETH)/debts[msg.sender] <= 1.5))) {
-            revert();
+        // (
+        // // accountETH[msg.sender].deposit.add(convertHAKToETH(
+        //     accountHAK[msg.sender].deposit.add(amount)
+        // // ))
+        // / accountDebt[msg.sender].deposit).mul(10) > 15
+
+        if (accountHAK[msg.sender].deposit <= 0) {
+            revert("no collateral deposited");
         }
+
+        if(_getCollateralRatio(token, msg.sender) < 15000) {
+            revert("borrow would exceed collateral ratio");
+        }
+        updateInterest();
  
-        accountDebt[msg.sender].deposit = Math.add(accountDebt[msg.sender], amount);
+        accountDebt[msg.sender].deposit = accountDebt[msg.sender].deposit.add(amount);
         msg.sender.transfer(amount);
-        emit Borrow(msg, token, amount, getCollateralRatio());
-        return getCollateralRatio();
-        */
+        emit Borrow(msg.sender, token, amount, _getCollateralRatio(token, msg.sender));
+        return _getCollateralRatio(token, msg.sender);
     }
      
     function repay(address token, uint256 amount) payable external override returns (uint256) {
@@ -226,15 +240,15 @@ contract Bank is IBank {
     }
 
     function _getCollateralRatio(address token, address account) view internal returns (uint256) {
-        /*8
-        if (debts[account] == 0) {
+        if (accountDebt[account].deposit == 0) {
             return type(uint256).max;
         }
-        
-        return userAccounts[account].deposit
-            .wdiv(debts[account])
-            .mul(10000);
-        */
+
+        // accountHAK[account].deposit
+        //     .wdiv(accountDebt[account].deposit)
+        //     .mul(10000);
+        return accountHAK[account].deposit.add(accountHAK[account].interest)
+            .mul(10000).wdiv(accountDebt[account].deposit.add(accountDebt[account].interest)) / 10 ** 18;
     }
     
     function getCollateralRatio(address token, address account) view external override returns (uint256) {
