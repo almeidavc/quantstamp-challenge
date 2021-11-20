@@ -417,4 +417,60 @@ describe("Bank contract", function () {
         .to.be.revertedWith("insufficient ETH sent by liquidator");
     });
   });
+
+
+    describe("getbalance", async function () {
+        it("0 blocks", async function () {
+            let amountBefore = await ethers.provider.getBalance(bank.address);
+            let amount = ethers.utils.parseEther("10.0");
+            await bank1.deposit(ethMagic, amount, { value: amount });
+            expect(await ethers.provider.getBalance(bank.address)).equals(amountBefore.add(amount));
+            expect(await bank1.getBalance(ethMagic)).equals(amount);
+        });
+
+        it("100 blocks", async function () {
+            let amount = BigNumber.from(10000);
+            await bank1.deposit(ethMagic, amount, { value: amount });
+            await mineBlocks(99);
+            expect(await bank1.getBalance(ethMagic)).equals(10300);
+        });
+
+        it("150 blocks", async function () {
+            let amount = BigNumber.from(10000);
+            await bank1.deposit(ethMagic, amount, { value: amount });
+            await mineBlocks(149);
+            expect(await bank1.getBalance(ethMagic)).equals(10450);
+        });
+
+        it("250 blocks", async function () {
+            let amount = BigNumber.from(10000);
+            await bank1.deposit(ethMagic, amount, { value: amount });
+            await mineBlocks(249);
+            expect(await bank1.getBalance(ethMagic)).equals(10750);
+        });
+
+        it("1311 blocks", async function () {
+            let amount = BigNumber.from(10000);
+            await bank1.deposit(ethMagic, amount, { value: amount });
+            await mineBlocks(1310);
+            expect(await bank1.getBalance(ethMagic)).equals(13933);
+        });
+
+        it("200 blocks in 2 steps", async function () {
+            let amount = BigNumber.from(10000);
+            // deposit once, wait 100 blocks and check balance
+            await bank1.deposit(ethMagic, amount, { value: amount });
+            await mineBlocks(100);
+            expect(await bank1.getBalance(ethMagic)).equals(10300);
+
+            // deposit again to trigger account update, wait 100 blocks and withdraw all
+            await bank1.deposit(ethMagic, amount, { value: amount });
+            await mineBlocks(99);
+            expect(await bank1.getBalance(ethMagic)).equals(
+                10300 // initial deposit + 100 block interest reward
+                + 3     // the 1 block where additional funds are deposited
+                + 10600 // second deposit + 100 block reward on 20k
+            );
+        });
+    });
 });
