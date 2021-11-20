@@ -41,6 +41,15 @@ contract Bank is IBank {
         userAccounts[msg.sender].lastInterestBlock = block.number;
     }
      
+    /**
+     * The purpose of this function is to allow end-users to deposit a given 
+     * token amount into their bank account.
+     * @param token - the address of the token to deposit. If this address is
+     *                set to 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE then 
+     *                the token to deposit is ETH.
+     * @param amount - the amount of the given token to deposit.
+     * @return - true if the deposit was successful, otherwise revert.
+     */
     function deposit(address token, uint256 amount) payable external override ETHorHAK(token) returns (bool) {
         if(msg.value != amount) {
             revert("invalid deposit value");
