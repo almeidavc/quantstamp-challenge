@@ -120,8 +120,9 @@ contract Bank is IBank {
         
         
         // if everything is fine
+        uint256 sendBackAmount = 0;
         if (msg.value > debts[account]) {
-            uint256 sendBackAmount = DSMath.sub(msg.value, debts[account]);
+             sendBackAmount = DSMath.sub(msg.value, debts[account]);
         } 
         uint256 collateralAmount = userAccount[account].deposit;
         msg.sender.transfer(collateralAmount);
