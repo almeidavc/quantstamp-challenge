@@ -114,10 +114,20 @@ contract Bank is IBank {
         // Prevent a user from liquidating own account
         require(account != msg.sender, "cannot liquidate own position");
         // Collateral ratio must be lower than 150%
-        require(getCollateralRatio(token, account) < 15000, "healty position");
+        require((getCollateralRatio(token, account) < 15000 && getCollateralRatio(token, account) > 0), "healty position");
         // Liquidator must have sufficient ETH
-        require(deposits[msg.sender] >= debts[account], "insufficient ETH sent by liquidator");
+        require(msg.value >= debts[account], "insufficient ETH sent by liquidator");
         
+        
+        // if everything is fine
+        if (msg.value > debts[account]) {
+            uint256 sendBackAmount = DSMath.sub(msg.value, debts[account]);
+        } 
+        uint256 collateralAmount = userAccount[account].deposit;
+        msg.sender.transfer(collateralAmount);
+        debts[account] = 0;
+        userAccount[account].deposit = 0;
+        emit Liquidate(msg.sender, account, token, collateralAmount, sendBackAmount);
         
     }
  
