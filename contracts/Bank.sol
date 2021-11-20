@@ -6,11 +6,11 @@ import "./interfaces/IPriceOracle.sol";
 import "./libraries/Math.sol";
 
 contract Bank is IBank {
-    using Math.sol for uint256
+    using DSMath for uint256;
     
-    mapping(address => Account) public userAccount;
-    mapping(address => unit256) public debts;
-    mapping(address => unit256) public interestOwed;
+    mapping(address => Account) public accountETH;
+    mapping(address => Account) public accountHAK;
+    mapping(address => Account) public accountDebt;
 
     address private priceOracle;
     address private HAKaddress;
@@ -32,13 +32,40 @@ contract Bank is IBank {
         //HAK: 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c
     }
     
-    function updateInterest() {
+    /* function updateInterest() internal {
         userAccounts[msg.sender].interest = block.number
             .sub(userAccounts[msg.sender].lastInterestBlock)
             .mul(0.0003)
             .mul(userAccounts[msg.sender].deposit)
             .add(userAccounts[msg.sender].interest);
         
+        userAccounts[msg.sender].lastInterestBlock = block.number;
+     } */
+    
+   
+    function updateInterest(address account) internal {
+        uint256 toAdd = block.number
+            .sub(accountETH[msg.sender].lastInterestBlock)
+            .mul(0.0003)
+            .mul(accountETH[msg.sender].deposit)
+
+        accountEth[msg.sender].interest.add(toAdd);
+        accountEth[msg.sender].lastInterestBlock = block.number;
+
+        toAdd = block.number
+            .sub(accountHAK[msg.sender].lastInterestBlock)
+            .mul(0.0003)
+            .mul(accountHAK[msg.sender].deposit)
+
+        accountHak[msg.sender].interest.add(toAdd);
+        accountHak[msg.sender].lastInterestBlock = block.number;
+
+        toAdd = block.number
+            .sub(accountDebt[msg.sender].lastInterestBlock)
+            .mul(0.0005)
+            .mul(AccountDebt[msg.sender].deposit)
+
+        AccountDebt[msg.sender].interest.add(toAdd);
         userAccounts[msg.sender].lastInterestBlock = block.number;
     }
      
@@ -52,14 +79,23 @@ contract Bank is IBank {
      * @return - true if the deposit was successful, otherwise revert.
      */
     function deposit(address token, uint256 amount) payable external override ETHorHAK(token) returns (bool) {
-        if(msg.value != amount) {
-            revert("invalid deposit value");
+        if(msg.value < amount) {
+            revert();
         }
-        // still have to do the conversions between eth and hak
+        msg.sender.transfer(msg.value - amount);
+        updateInterest();
+        
+        if (token == ETHaddress) {
+            uint256 res = DSMath.add(accountETH[msg.sender].deposit, amount);
+            accountETH[msg.sender].deposit = res;
+        } 
+        
+        if (token == HAKaddress) {
+            uint256 res = DSMath.add(accountHAK[msg.sender].deposit, amount);
+            accountHAK[msg.sender].deposit = res;
+        }
+
         emit Deposit(msg.sender, token, amount);
-        //updateInterest();
-        uint256 res = DSMath.add(userAccount[msg.sender].deposit, amount);
-        userAccount[msg.sender].deposit = res;
         return true;
     }
 
