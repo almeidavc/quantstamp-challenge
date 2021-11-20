@@ -1,6 +1,8 @@
+//SPDX-License-Identifier: Unlicense
 pragma solidity 0.7.0;
 
 import "./interfaces/IBank.sol";
+import "./interfaces/IPriceOracle.sol";
 
 contract Bank is IBank {
     bool internal locked
@@ -131,6 +133,16 @@ contract Bank is IBank {
      * @return - the value of the caller's balance with interest, excluding debts.
      */
     function getBalance(address token) view external override ETHorHAK(token) returns (uint256) {
-        // TODO
+        Account account = userAccount[msg.sender];
+        uint256 blockCount = block.number - account.lastInterestBlock;
+        uint256 deposit = account.deposit;
+        if (token == HAKaddress) {
+            deposit = convertToHAK(deposit);
+        }
+        constant uint256 interestRate = 0.03;
+        account.interest = deposit * ((blockCount % 100) * interestRate + 1);
+
+        // If a user withdraws their deposit earlier or later than 100 blocks, they will receive a proportional interest amount.
+        return deposit;
     }
 }
