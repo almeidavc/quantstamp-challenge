@@ -189,8 +189,8 @@ contract Bank is IBank {
             revert("token not supported");
         }
 
-        if(msg.value != amount) {
-            revert("invalid amount");
+        if(msg.value < amount) {
+            revert("msg.value < amount to repay");
         }
 
         if (accountDebt[msg.sender].deposit + accountDebt[msg.sender].interest == 0) {
