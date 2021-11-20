@@ -3,6 +3,7 @@ pragma solidity 0.7.0;
 
 import "./interfaces/IBank.sol";
 import "./interfaces/IPriceOracle.sol";
+import "./libraries/Math.sol";
 
 contract Bank is IBank {
     bool internal locked;
@@ -13,7 +14,7 @@ contract Bank is IBank {
     address constant private ETHaddress = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     modifier ETHorHAK(address token) {
-      require(token == HAKaddress || token == ETHaddress);
+      require(token == HAKaddress || token == ETHaddress, "token not supported");
       _;
     }
     
@@ -47,15 +48,15 @@ contract Bank is IBank {
      * @param amount - the amount of the given token to deposit.
      * @return - true if the deposit was successful, otherwise revert.
      */
-    function deposit(address token, uint256 amount) payable external override returns (bool) {
-        // TODO
-        if(!(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c || token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) || 
-        !(msg.value >= amount) || !(msg.value >= amount)) {
-            revert();
+    function deposit(address token, uint256 amount) payable external override ETHorHAK(token) returns (bool) {
+        if(msg.value != amount) {
+            revert("invalid deposit value");
         }
-        userAccount[msg.sender].deposit += amount;
         // still have to do the conversions between eth and hak
         emit Deposit(msg.sender, token, amount);
+        //computeInterest();
+        uint256 res = DSMath.add(userAccount[msg.sender].deposit, amount);
+        userAccount[msg.sender].deposit = res;
         return true;
     }
 
@@ -166,16 +167,18 @@ contract Bank is IBank {
      * @return - the value of the caller's balance with interest, excluding debts.
      */
     function getBalance(address token) view external override ETHorHAK(token) returns (uint256) {
-//         Account account = userAccount[msg.sender];
-//         uint256 blockCount = block.number - account.lastInterestBlock;
-//         uint256 deposit = account.deposit;
-//         if (token == HAKaddress) {
-//             deposit = convertToHAK(deposit);
-//         }
-//         constant uint256 interestRate = 0.03;
-//         account.interest = deposit * ((blockCount % 100) * interestRate + 1);
-// 
-//         // If a user withdraws their deposit earlier or later than 100 blocks, they will receive a proportional interest amount.
-//         return deposit;
+        Account memory account = userAccount[msg.sender];
+        uint256 balance = account.deposit;
+
+        // If a user withdraws their deposit earlier or later than 100 blocks, they will receive a proportional interest amount.
+        // uint256 blockCount = block.number - account.lastInterestBlock;
+        // if (token == HAKaddress) {
+        //     deposit = convertToHAK(deposit);
+        // }
+        //uint256 interestRate = 0.03;
+        // account.interest = depositM * (blockCount % 100) * 3 / 100;
+        // depositM += account.interest;
+
+        return balance;
     }
 }
