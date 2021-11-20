@@ -1,9 +1,9 @@
 pragma solidity 0.7.0;
 
 import "./interfaces/IBank.sol";
+import "./SafeMath.sol";
 
 contract Bank is IBank {
-    bool internal locked
     mapping(address => Account) public userAccount;
     mapping(address => unit256) public debts;
     mapping(address => unit256) public interestOwed;
@@ -21,15 +21,19 @@ contract Bank is IBank {
      */
     function deposit(address token, uint256 amount) payable external override returns (bool) {
         // TODO
-        if(!(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c || token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) || 
-        !(msg.value >= amount)) {
+        if(!(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c && token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) && 
+        !(msg.value == amount)) {
             revert();
         }
         userAccount[msg.sender].deposit += amount;
         // still have to do the conversions between eth and hak
         emit Deposit(msg.sender, token, amount);
-        computeInterest();
-        userAccount[msg.sender].deposit += amount;
+        updateInterest();
+        (bool success, uint256 res) = SafeMath.tryAdd(userAccount[msg.sender].deposit, amount);
+        if(!success){
+            revert();
+        }
+        userAccount[msg.sender].deposit = res;
         return true;
     }
 
@@ -63,11 +67,15 @@ contract Bank is IBank {
      * @return - the current collateral ratio.
      */
     function borrow(address token, uint256 amount) external override returns (uint256) {
-        if(!(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c || token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE || 
-        !((userAccount[msg.sender].deposit+amount)/debt =< 1.5) {
+        if(!(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c && token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE && 
+        !((userAccount[msg.sender].deposit+amount)/debt <= 1.5))) {
             revert();
         }
-        debt += amount;
+        (bool success, uint256 res) = SafeMath.tryAdd(debt[msg.sender], amount);
+        if(!success){
+            revert();
+        }
+        debt = res;
         return getCollateralRatio();
     }
      
@@ -89,21 +97,23 @@ contract Bank is IBank {
         
         //debt still has to be implemented
         
-        if(!(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c || token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) || 
+        if(!(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c && token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) && 
         !(msg.value == amount)) {
             revert();
         }
-        computeInterest();
+        updateInterest();
         uint256 toReduce = amount;
-        interest= interest- toReduce;
         if (toReduce>interestOwed[msg.sender]) {
+            interestOwed[msg.sender] = 0;
             toReduce = toReduce - interestOwed[msg.sender];
         } 
         else{
+            interestOwed[msg.sender] = interest[msg.sender] - toReduce;
+            emit Repay(msg.sender, token, debt);
             return debt[msg.sender];
         }
         debt = debt[msg.sender] - toReduce;
-        emit Repay(msg.sender, token, debt)
+        emit Repay(msg.sender, token, debt);
         return debt[msg.sender];
     }
      
@@ -132,6 +142,7 @@ contract Bank is IBank {
      */
     function getCollateralRatio(address token, address account) view external override returns (uint256) {
         // TODO
+        
     }
 
     /**
