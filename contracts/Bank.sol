@@ -8,8 +8,9 @@ import "./libraries/Math.sol";
 contract Bank is IBank {
     using Math.sol for uint256
     
-    bool internal locked;
     mapping(address => Account) public userAccount;
+    mapping(address => unit256) public debts;
+    mapping(address => unit256) public interestOwed;
 
     address private priceOracle;
     address private HAKaddress;
@@ -56,7 +57,7 @@ contract Bank is IBank {
         }
         // still have to do the conversions between eth and hak
         emit Deposit(msg.sender, token, amount);
-        //computeInterest();
+        //updateInterest();
         uint256 res = DSMath.add(userAccount[msg.sender].deposit, amount);
         userAccount[msg.sender].deposit = res;
         return true;
@@ -91,11 +92,38 @@ contract Bank is IBank {
     }
    
     function borrow(address token, uint256 amount) external override returns (uint256) {
-        // TODO
+        if(!(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c && token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE && 
+        !((userAccount[msg.sender].deposit+amount)/debts[msg.sender] <= 1.5))) {
+            revert();
+        }
+        debts[msg.sender] = Math.add(debts[msg.sender], amount);
+        msg.sender.transfer(amount);
+        return getCollateralRatio();
     }
      
     function repay(address token, uint256 amount) payable external override returns (uint256) {
         // TODO
+        
+        //debt still has to be implemented
+        
+        if(!(token == 0xbefeed4cb8c6dd190793b1c97b72b60272f3ea6c && token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) && 
+        !(msg.value == amount)) {
+            revert();
+        }
+        updateInterest();
+        uint256 toReduce = amount;
+        if (toReduce>interestOwed[msg.sender]) {
+            interestOwed[msg.sender] = 0;
+            toReduce = toReduce - interestOwed[msg.sender];
+        } 
+        else{
+            interestOwed[msg.sender] = interest[msg.sender] - toReduce;
+            emit Repay(msg.sender, token, debts[msg.sender]);
+            return debts[msg.sender];
+        }
+        debts[msg.sender] = debts[msg.sender] - toReduce;
+        emit Repay(msg.sender, token, debts[msg.sender]);
+        return debts[msg.sender];
     }
      
     function liquidate(address token, address account) payable external override returns (bool) {
